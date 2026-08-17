@@ -1,0 +1,345 @@
+/* Dark terminal aesthetic: monospace everywhere, minimal chrome. */
+
+:root {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --panel-alt: #1a1f26;
+  --line: #262d36;
+  --text: #d7dee7;
+  --muted: #7d8894;
+  --accent: #4ade80;
+  --accent-dim: #227544;
+  --danger: #f87171;
+  --warn: #fbbf24;
+  --radius: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.shell {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+  background: var(--panel);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.brand:hover {
+  text-decoration: none;
+  color: var(--accent);
+}
+.brand span {
+  color: var(--accent);
+}
+
+/* Loading state: a spinner sized to sit in the content area, never the header. */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 72px 16px;
+  color: var(--muted);
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.7s linear infinite;
+  flex: 0 0 auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.topbar-right .email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+.topbar-right a.email:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  /* On a phone the address is the first thing worth dropping — the nav and the
+     sign-out control are not. */
+  .topbar-right .email {
+    display: none;
+  }
+  .topbar-left,
+  .topbar-right {
+    gap: 12px;
+  }
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Connection state, colour-coded so it reads at a glance from across the room. */
+.status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.status-connected {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+.status-connecting {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+.status-closed {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 20px;
+  margin: 0 0 4px;
+}
+h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+}
+
+label {
+  display: block;
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 16px; /* 16px stops iOS Safari zooming on focus */
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+  color: var(--text);
+  cursor: pointer;
+  min-height: 40px;
+}
+button:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #eafff2;
+}
+button.danger {
+  color: var(--danger);
+}
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  min-height: 0;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.row > * {
+  flex: 1 1 auto;
+}
+
+.notice {
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 12px 0;
+  border: 1px solid;
+  font-size: 13px;
+  word-break: break-word;
+}
+.notice.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.notice.warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.notice.info {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.server {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  background: var(--panel-alt);
+}
+.server header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.server .fp {
+  font-size: 11px;
+  color: var(--muted);
+  word-break: break-all;
+  margin-top: 6px;
+}
+
+/* Terminal page: full viewport, no page scroll — xterm does its own. */
+.terminal-page {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+.terminal-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 4px;
+  background: #000;
+}
+.terminal-host .xterm {
+  height: 100%;
+}
+
+.banner {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.banner.error {
+  background: #2a1416;
+  color: var(--danger);
+}
+.banner.warn {
+  background: #2a2410;
+  color: var(--warn);
+}
+
+@media (max-width: 600px) {
+  .shell {
+    padding: 16px 12px 48px;
+  }
+  .card {
+    padding: 16px;
+  }
+}

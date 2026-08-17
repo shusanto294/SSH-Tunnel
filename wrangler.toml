@@ -1,0 +1,47 @@
+name = "ssh-tunnel"
+main = "src/index.ts"
+compatibility_date = "2025-08-01"
+
+# No nodejs_compat: the spike proved the npm SSH libraries are unusable here, so
+# the transport is hand-rolled on WebCrypto and needs no Node shims.
+
+# The Next.js static export. The Worker handles /api/* and /ws itself and only
+# falls through to assets for everything else.
+[assets]
+directory = "./web/out"
+binding = "ASSETS"
+html_handling = "auto-trailing-slash"
+not_found_handling = "404-page"
+run_worker_first = ["/api/*", "/ws"]
+
+# One Durable Object per live terminal, plus a small one for rate limiting.
+[[durable_objects.bindings]]
+name = "SSH_SESSION"
+class_name = "SshSession"
+
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiter"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SshSession", "RateLimiter"]
+
+# Accounts, sessions, and saved servers.
+# Create with: wrangler d1 create ssh-tunnel — then paste the id here.
+[[d1_databases]]
+binding = "DB"
+database_name = "ssh-tunnel"
+database_id = "c863ab5a-a62b-4bfd-8db4-dd2db0ccd731"
+migrations_dir = "migrations"
+
+[vars]
+# "true" lets anyone register without an invite code. Set deliberately: this app
+# holds SSH credentials and can reach any host it is pointed at, so an open
+# deployment is an SSH gateway for whoever finds the URL. Flip back to "false"
+# and redeploy once the accounts that should exist do. See the README security
+# section, and consider TARGET_ALLOWLIST alongside this.
+OPEN_REGISTRATION = "true"
+
+# Secrets, set with `wrangler secret put` and never committed:
+#   TARGET_ALLOWLIST   optional comma-separated host allowlist
