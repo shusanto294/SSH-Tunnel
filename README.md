@@ -295,6 +295,24 @@ deployment after the compromise. Deploy accordingly: keep the Cloudflare
 account on hardware keys, keep the deploy path narrow, and use per-user SSH
 accounts on the target servers rather than shared root credentials.
 
+### Resisting brute force and automation
+
+Password guessing is the realistic attack on this app, so it is defended in
+depth. Full detail in [SECURITY.md](SECURITY.md); the short version:
+
+- Rate limits per address **and per account**, so rotating IPs buys no extra
+  attempts against one person's password.
+- A reputation score that escalates to outright blocks — 5 minutes, then an
+  hour, then a day — covering every endpoint and the WebSocket, not just
+  sign-in. A guessing run is blocked after **5 or 6 attempts**. Blocked requests
+  are refused before any database query or password hashing runs.
+- Scores decay after a quiet day, and a correct sign-in clears the account's
+  score, so real users are not punished for forgetting a password.
+- Passwords are checked against Have I Been Pwned at registration, using
+  k-anonymity so the password never leaves the Worker.
+- Security headers on every response, including a CSP that forbids framing and
+  restricts `connect-src` to the app's own origin.
+
 ### Account authentication
 
 - PBKDF2-HMAC-SHA256, 600,000 iterations, unique 32-byte-derived verifier per

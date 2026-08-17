@@ -1,0 +1,19 @@
+# Security headers for static pages.
+#
+# The Worker only runs for /api/* and /ws (see run_worker_first in
+# wrangler.toml), so HTML and assets are served straight from Cloudflare's asset
+# store and never pass through src/security/headers.ts. This file is how those
+# responses get the same treatment — keep the two in sync.
+#
+# 'unsafe-inline' is required for scripts and styles: Next's static export
+# inlines its hydration payload, and a nonce cannot be generated for a file
+# served without running code.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

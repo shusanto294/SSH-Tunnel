@@ -19,7 +19,8 @@ import {
 import { audit } from '../db/audit';
 import { redeemInvite } from '../db/invites';
 import * as users from '../db/users';
-import { LIMITS, clientKey, rateLimit, rateLimitReset } from '../rate-limit';
+import { LIMITS, blockStatus, clientKey, pardon, rateLimit, rateLimitReset, strike } from '../rate-limit';
+import { BREACHED_MESSAGE, isBreachedPassword } from '../auth/breach';
 import { randomBytes } from '../util/encoding';
 import { email as parseEmail, fail, json, readJson, str } from './http';
 
@@ -44,6 +45,7 @@ export async function register(request: Request, env: Env): Promise<Response> {
 
   const problem = validatePassword(body.password);
   if (problem) return fail(400, problem.message);
+  if (await isBreachedPassword(body.password)) return fail(400, BREACHED_MESSAGE);
 
   // Bootstrap: an empty deployment has nobody who could mint an invite, so the
   // very first account is allowed through and becomes the administrator.
@@ -97,17 +99,29 @@ export async function login(request: Request, env: Env): Promise<Response> {
   const password = typeof body.password === 'string' ? body.password : '';
   if (!address || password.length === 0) return fail(401, GENERIC_LOGIN_FAILURE);
 
-  const accountGate = await rateLimit(env, `login:acct:${address.toLowerCase()}`, LIMITS.login);
-  if (!accountGate.allowed) return tooMany(accountGate.retryAfter);
+  // Limits keyed on the account as well as the address, so rotating IPs — a
+  // botnet, or anyone with a proxy pool — does not buy extra attempts against
+  // one person's password.
+  const accountKey = `login:acct:${address.toLowerCase()}`;
+  const accountLock = await blockStatus(env, accountKey);
+  if (accountLock.blocked) return tooMany(accountLock.retryAfter);
+
+  const accountGate = await rateLimit(env, accountKey, LIMITS.login);
+  if (!accountGate.allowed) {
+    await strike(env, accountKey, 5);
+    return tooMany(accountGate.retryAfter);
+  }
 
   const user = await users.findByEmail(env, address);
   if (!user || user.disabled) {
     await burnEquivalentTime(password);
+    await strike(env, accountKey, 2);
     await audit(env, null, 'login_failed');
     return fail(401, GENERIC_LOGIN_FAILURE);
   }
 
   if (!(await verifyPassword(password, user.password))) {
+    await strike(env, accountKey, 2);
     await audit(env, user.id, 'login_failed');
     return fail(401, GENERIC_LOGIN_FAILURE);
   }
@@ -124,8 +138,11 @@ export async function login(request: Request, env: Env): Promise<Response> {
     await users.updateCredentials(env, user.id, await hashPassword(password), await wrapDek(dek, password));
   }
 
+  // A correct password proves this was not an attack on this account, so both
+  // the window and the accumulated strikes are cleared.
   const token = await createSession(env, user.id);
-  await rateLimitReset(env, `login:acct:${address.toLowerCase()}`);
+  await rateLimitReset(env, accountKey);
+  await pardon(env, accountKey);
   await audit(env, user.id, 'login');
   return json(
     { user: { id: user.id, email: user.email, isAdmin: user.isAdmin } },
@@ -173,6 +190,7 @@ export async function changePassword(
   }
   const problem = validatePassword(body.newPassword);
   if (problem) return fail(400, problem.message);
+  if (await isBreachedPassword(body.newPassword)) return fail(400, BREACHED_MESSAGE);
 
   const user = await users.findById(env, auth.userId);
   if (!user) return fail(401, 'Not signed in.');

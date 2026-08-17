@@ -53,6 +53,79 @@ cloud metadata address), and multicast ranges are refused. Hostnames are
 resolved and every returned address checked, then the connection is made to the
 address that was checked — closing the DNS-rebinding window.
 
+## Abuse resistance
+
+**Layered rate limits**, all backed by a Durable Object rather than a database
+counter — a counter in D1 can be raced by two concurrent requests, a Durable
+Object serialises them.
+
+| Scope | Budget |
+| ----- | ------ |
+| All API traffic, per address | 240 requests / minute |
+| Sign-in, per address | 8 / 5 minutes |
+| Sign-in, per account | 8 / 5 minutes |
+| Registration, per address | 5 / hour |
+| Opening a terminal, per account | 30 / 5 minutes |
+
+The per-account sign-in limit matters as much as the per-address one: without
+it, anyone with a proxy pool or a botnet gets unlimited attempts at a single
+password by rotating addresses.
+
+**Escalating blocks.** Rate limits alone let a patient attacker try eight
+passwords every five minutes indefinitely. Every suspicious outcome also adds
+to a reputation score for the address (and, on sign-in, the account):
+
+- 10 strikes → blocked 5 minutes
+- 25 strikes → blocked 1 hour
+- 50 strikes → blocked 24 hours
+
+Scores decay completely after a quiet day, so a shared or reassigned address
+recovers on its own. A successful sign-in clears the account's score outright —
+proof it was not an attack on that account.
+
+A wrong password is worth 2, a rejected invite code 3, and tripping a rate limit
+5. In practice a password-guessing run is blocked after **5 or 6 attempts**, and
+the block covers every API endpoint and the WebSocket, not just sign-in.
+Blocked requests are refused before any database query or password hashing
+happens, so an attack costs the attacker more than it costs the deployment.
+
+What is deliberately *not* scored: reads. The landing page calls
+`GET /api/auth/me` while signed out and receives a 401 on every visit — scoring
+that would ban anyone who merely reads the site. The policy lives in one place,
+`src/security/suspicion.ts`, and is unit-tested.
+
+**Breached-password rejection.** Registration and password changes check the
+password against Have I Been Pwned using the k-anonymity range API: only the
+first five characters of its SHA-1 hash are sent, so the password never leaves
+the Worker and the service cannot tell which hash was being asked about. Reused
+passwords from other sites' breaches are the most common way accounts like these
+are taken over, and no iteration count helps once an attacker already has the
+password. The check fails open: an outage at that service must not prevent
+signing up.
+
+**Security headers** on every response, static pages included:
+`Content-Security-Policy` (with `frame-ancestors 'none'` and `connect-src
+'self'`, so injected script cannot exfiltrate to another origin),
+`Strict-Transport-Security`, `X-Frame-Options`, `X-Content-Type-Options`,
+`Referrer-Policy: no-referrer`, `Permissions-Policy`, and
+`Cross-Origin-Opener-Policy`. Pages are served straight from Cloudflare's asset
+store without invoking the Worker, so their copy lives in `web/public/_headers`
+— keep it in sync with `src/security/headers.ts`.
+
+Session cookies are `HttpOnly; Secure; SameSite=Strict`, and every
+state-changing request must additionally be same-origin.
+
+### Worth enabling in the Cloudflare dashboard
+
+The application defends itself, but these cost nothing and act before a request
+reaches it:
+
+- **Bot Fight Mode** (Security → Bots) — challenges obvious automation.
+- **A WAF rate-limiting rule** on `/api/auth/*`, as a second ceiling below the
+  application's own.
+- **Turnstile** on registration, if the deployment is public and attracting
+  automated sign-ups.
+
 ## Known limits
 
 - **A compromised Worker sees everything.** Encryption at rest defends against a

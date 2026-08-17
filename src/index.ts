@@ -17,7 +17,9 @@ import type { Env } from './env';
 import { audit } from './db/audit';
 import { getServerWithSecret, touchServer } from './db/servers';
 import { resolveTarget } from './net/guard';
-import { LIMITS, rateLimit } from './rate-limit';
+import { LIMITS, blockStatus, clientKey, rateLimit, strike } from './rate-limit';
+import { secure } from './security/headers';
+import { socketSuspicionWeight, suspicionWeight } from './security/suspicion';
 import type { AuthCredential } from './ssh/connection';
 import type { SessionParams } from './session';
 
@@ -25,26 +27,77 @@ export { SshSession } from './session';
 export { RateLimiter } from './rate-limit';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const isApi = url.pathname.startsWith('/api/');
+    const isSocket = url.pathname === '/ws';
 
-    if (url.pathname === '/ws') return handleWebSocket(request, env, url);
-    if (url.pathname.startsWith('/api/')) {
-      try {
-        return await handleApi(request, env, url);
-      } catch {
-        // An uncaught throw would otherwise become Cloudflare's HTML error
-        // page, which the browser client then fails to parse as JSON. The
-        // message stays generic: no exception text, no stack.
-        return new Response(JSON.stringify({ error: 'Something went wrong. Please try again.' }), {
-          status: 500,
-          headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-        });
-      }
+    // Static assets are cheap and carry no authority; skip the reputation
+    // lookup for them so the landing page stays fast.
+    if (!isApi && !isSocket) return secure(await env.ASSETS.fetch(request));
+
+    const ip = clientKey(request);
+    const ipKey = `ip:${ip}`;
+
+    // A blocked address is refused before any work is done — no database
+    // query, no password hashing, no socket.
+    const blocked = await blockStatus(env, ipKey);
+    if (blocked.blocked) return secure(refused(blocked.retryAfter));
+
+    // A ceiling across the whole API. Well above what the UI generates, low
+    // enough that a scraper hits it immediately.
+    const budget = await rateLimit(env, `api:${ip}`, LIMITS.api);
+    if (!budget.allowed) {
+      ctx.waitUntil(strike(env, ipKey, 5).then(() => undefined));
+      return secure(refused(budget.retryAfter));
     }
-    return env.ASSETS.fetch(request);
+
+    const response = isSocket
+      ? await handleWebSocket(request, env, url)
+      : await handleApiSafely(request, env, url);
+
+    // Score the outcome. Done after responding rather than before, so the
+    // reputation update never delays a legitimate request.
+    const weight = isSocket
+      ? socketSuspicionWeight(response.status)
+      : suspicionWeight({
+          method: request.method,
+          path: url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, ''),
+          status: response.status,
+        });
+    if (weight > 0) ctx.waitUntil(strike(env, ipKey, weight).then(() => undefined));
+
+    return secure(response);
   },
 } satisfies ExportedHandler<Env>;
+
+async function handleApiSafely(request: Request, env: Env, url: URL): Promise<Response> {
+  try {
+    return await handleApi(request, env, url);
+  } catch {
+    // An uncaught throw would otherwise become Cloudflare's HTML error page,
+    // which the browser client then fails to parse as JSON. The message stays
+    // generic: no exception text, no stack.
+    return new Response(JSON.stringify({ error: 'Something went wrong. Please try again.' }), {
+      status: 500,
+      headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+    });
+  }
+}
+
+function refused(retryAfter: number): Response {
+  return new Response(
+    JSON.stringify({ error: 'Too many requests from this address. Try again later.' }),
+    {
+      status: 429,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'retry-after': String(Math.max(1, retryAfter)),
+        'cache-control': 'no-store',
+      },
+    },
+  );
+}
 
 async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {

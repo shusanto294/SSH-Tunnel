@@ -98,7 +98,10 @@ function serializeCookie(name: string, value: string, maxAgeSeconds: number): st
     'Path=/',
     'HttpOnly',
     'Secure',
-    'SameSite=Lax',
+    // Strict, not Lax: the app is a single-page client that fetches its own
+    // API, so it never needs the cookie on a cross-site navigation — and Strict
+    // means no other site can cause an authenticated request at all.
+    'SameSite=Strict',
     `Max-Age=${maxAgeSeconds}`,
   ].join('; ');
 }
