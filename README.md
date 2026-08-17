@@ -151,8 +151,22 @@ Two settings, both worth considering before this is more than a toy.
 OPEN_REGISTRATION = "false"
 ```
 
-Then `npm run deploy`. New accounts now need an invite code, which an
-administrator mints from the account page.
+Then `npm run deploy`. New accounts then need a single-use invite code.
+
+There is no button for minting codes — the invite panel was removed once
+registration was opened — so the practical order is: leave registration open,
+create the accounts you want, then close it. If you do need a code afterwards,
+an admin account can mint one through the API:
+
+```bash
+curl -X POST https://your-app.workers.dev/api/invites \
+  -H 'content-type: application/json' \
+  -H 'sec-fetch-site: same-origin' \
+  -b 'st=YOUR_SESSION_COOKIE' -d '{}'
+```
+
+The `st` cookie is the session cookie from your signed-in browser. The code is
+returned once and only its hash is stored.
 
 **Restrict which hosts it can reach**, so a stolen session cannot be used as a
 general-purpose SSH relay:
@@ -377,14 +391,48 @@ terminal, runs a command, and exits non-zero if the output does not come back.
 ## Layout
 
 ```
-src/index.ts      Worker fetch handler: /api/*, /ws, static assets
-src/session.ts    SshSession Durable Object — one live terminal each
-src/ssh/          SSH protocol layer; no Worker imports, unit-testable
-src/auth/         password hashing, sessions, per-user credential crypto
-src/api/          JSON endpoints
-src/net/guard.ts  egress policy
-migrations/       D1 schema
-web/              Next.js frontend, static export
-scripts/          end-to-end smoke test
-test/             Vitest unit tests
+src/index.ts        Worker fetch handler: /api/*, /ws, static assets
+src/session.ts      SshSession Durable Object — one live terminal each
+src/rate-limit.ts   RateLimiter Durable Object
+src/ssh/            SSH protocol layer; no Worker imports, unit-testable
+src/auth/           password hashing, sessions, per-user credential crypto
+src/api/            JSON endpoints
+src/db/             D1 queries, all scoped by user_id
+src/net/guard.ts    egress policy
+migrations/         D1 schema
+web/app/            Next.js pages (static export)
+web/components/     TopBar, TerminalView, Loading
+web/lib/api.ts      typed client for the Worker API
+scripts/            end-to-end smoke test
+test/               Vitest unit tests
 ```
+
+### Screens
+
+| Route | What it is |
+| ----- | ---------- |
+| `/` | Public landing page. Signed-in visitors get a link to their servers |
+| `/register` | Create an account |
+| `/login` | Sign in |
+| `/servers` | Your saved servers: add, connect, forget host key, delete |
+| `/terminal?server=<id>` | The xterm.js session for one server |
+| `/account` | Change password, sign out everywhere |
+
+### API
+
+All endpoints live under `/api`. Non-GET requests must be same-origin.
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| `GET` | `/api/config` | Whether registration needs an invite. Public |
+| `POST` | `/api/auth/register` | `{email, password, inviteCode?}`. Public |
+| `POST` | `/api/auth/login` | `{email, password}`. Public |
+| `GET` | `/api/auth/me` | Current user, and whether the encryption key is loaded |
+| `POST` | `/api/auth/logout` | This session |
+| `POST` | `/api/auth/logout-everywhere` | Every session for the account |
+| `POST` | `/api/auth/password` | `{currentPassword, newPassword}` |
+| `GET` | `/api/servers` | Your servers. Never returns a stored credential |
+| `POST` | `/api/servers` | Create |
+| `GET`/`PATCH`/`DELETE` | `/api/servers/:id` | Read, update, delete |
+| `POST` | `/api/invites` | Mint a code. Admin only |
+| `GET` | `/ws?server=<id>&cols=&rows=` | WebSocket upgrade for a terminal |

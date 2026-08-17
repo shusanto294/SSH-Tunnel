@@ -429,22 +429,57 @@ leg turns out to be blocked.)
 
 # Project rules
 
-Everything above is the build plan. Everything below applies to all work in this
-repo, permanently.
+Everything above is the build plan, kept as a record of what was asked and what
+Phase 0 found. Everything below describes the app as it actually is, and applies
+to all work in this repo.
+
+## Current state
+
+Deployed at `https://ssh-tunnel.shusanto294.workers.dev`, public source at
+`https://github.com/shusanto294/SSH-Tunnel` (MIT).
+
+Verified working against a real server: TCP egress, KEXINIT negotiation, X25519
+kex, exchange hash, ssh-ed25519 host key verification, key derivation, AES-GCM
+in both directions, and **password authentication**. The interactive shell
+(`pty-req` + `shell`) has not been independently confirmed — `npm run smoke`
+closes that.
+
+Decisions that differ from the plan above, and why:
+
+- **Registration is open** (`OPEN_REGISTRATION = "true"`). The invite system
+  still exists — table, API, and the register-page field, which renders only
+  when the server says a code is required — but there is no UI for minting
+  codes. Closing registration means minting through `POST /api/invites`.
+- **Cloudflare Access is not used at all.** First-party accounts replaced it, as
+  Phase 5 describes.
+- **The landing page at `/` is public.** It is the pitch, not a redirect;
+  signed-in visitors get a link to their servers instead of being bounced.
+- **Host key pins can be cleared** from the server card or the mismatch banner,
+  for machines that were genuinely rebuilt. Clearing un-pins; it does not trust
+  the new key, so the next connection still asks for confirmation.
 
 ## Layout
 
 ```
-src/index.ts      Worker fetch handler: routes /api/*, /ws, static assets
-src/session.ts    SshSession Durable Object — one live terminal each
-src/ssh/          SSH protocol layer. No Worker or DO imports; unit-testable
-src/auth/         password hashing, session cookies, per-user credential crypto
-src/api/          JSON endpoints: register, login, servers CRUD
-migrations/       D1 schema
-web/              Next.js frontend, static export, its own package.json
-scripts/          end-to-end smoke test
-test/             Vitest unit tests
+src/index.ts       Worker fetch handler: routes /api/*, /ws, static assets
+src/session.ts     SshSession Durable Object — one live terminal each
+src/rate-limit.ts  RateLimiter Durable Object — sign-in and session-open limits
+src/ssh/           SSH protocol layer. No Worker or DO imports; unit-testable
+src/auth/          password hashing, session cookies, per-user credential crypto
+src/api/           JSON endpoints: config, auth, servers, invites
+src/db/            D1 queries. Every one scoped by user_id
+src/net/guard.ts   egress policy: DoH resolve, then refuse non-public addresses
+migrations/        D1 schema
+web/               Next.js frontend, static export, its own package.json
+scripts/           end-to-end smoke test
+test/              Vitest unit tests
+README.md          user-facing docs: hosting, security model, troubleshooting
+SECURITY.md        what is and is not a secret; reporting; known limits
 ```
+
+Pages: `/` (public landing), `/register`, `/login`, `/servers`, `/terminal`,
+`/account`. Shared chrome lives in `web/components/TopBar.tsx`, which every
+signed-in page renders immediately so navigation only swaps content.
 
 The repo root *is* the project. Do not create a nested `ssh-tunnel/` directory.
 
@@ -458,6 +493,16 @@ The repo root *is* the project. Do not create a nested `ssh-tunnel/` directory.
 - **Runtime `WebAssembly.instantiate()` is disallowed.** Proven during the
   Phase 0 spike: it is what killed the npm `ssh2` approach. No argon2, bcrypt, or scrypt WASM
   builds. Password hashing uses WebCrypto PBKDF2.
+- **PBKDF2 is capped at 100,000 iterations per `deriveBits` call** —
+  `NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+  supported`. The local runtime does **not** enforce this, so it only appears in
+  production. `src/auth/password.ts` chains rounds to reach the target total;
+  do not "simplify" it back into one call.
+- **SSH messages arrive out of the order you expect.** A server sends
+  `SSH_MSG_GLOBAL_REQUEST` the moment authentication succeeds, and
+  `CHANNEL_WINDOW_ADJUST` before it answers `pty-req`. Anything waiting for a
+  specific reply must step over unrelated traffic rather than treat it as a
+  protocol error.
 - **SSH crypto burns CPU per packet**, and that counts against the Workers CPU
   limit. Keep the per-keystroke path allocation-light.
 
@@ -512,8 +557,16 @@ Do not describe those as working until a real `whoami` round-trips.
 npm run dev        # wrangler dev with the local D1 database
 npm run build      # build the Next.js frontend into web/out
 npm run typecheck  # tsc over the Worker source
-npm run test       # vitest over src/ssh
+npm run test       # vitest: codecs, key derivation, packet framing, egress guard
 npm run deploy     # build the frontend, then wrangler deploy
 npm run db:local   # apply migrations to the local D1 database
 npm run db:remote  # apply migrations to the deployed D1 database
+npm run smoke -- --host H --user U --password P    # end-to-end against a real server
 ```
+
+`npm run build` must have run at least once before `npm run dev`, since the
+Worker serves `web/out` as static assets.
+
+After any deploy, Cloudflare propagates static assets across its edge
+independently of the Worker. For a minute or two some requests return the
+previous version — check repeatedly before concluding a change did not land.
