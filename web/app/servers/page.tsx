@@ -13,7 +13,7 @@ export default function ServersPage() {
   const [servers, setServers] = useState<Server[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
+  const [panel, setPanel] = useState<'quick' | 'save' | null>(null);
 
   const refresh = useCallback(async () => {
     const list = await api.listServers();
@@ -43,6 +43,20 @@ export default function ServersPage() {
       cancelled = true;
     };
   }, [router, refresh]);
+
+  /**
+   * Provisions the session here, then navigates with only a ticket. Nothing
+   * sensitive ends up in the URL or in browser history.
+   */
+  async function open(server: Server) {
+    setError(null);
+    try {
+      const { ticket } = await api.connect({ serverId: server.id, cols: 80, rows: 24 });
+      router.push(`/terminal?ticket=${encodeURIComponent(ticket)}&server=${encodeURIComponent(server.id)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open that session.');
+    }
+  }
 
   // Clearing a pinned host key is deliberately not offered here. It is only
   // ever the right action in response to an actual mismatch, and the terminal
@@ -75,21 +89,30 @@ export default function ServersPage() {
 
         <div className="row" style={{ alignItems: 'baseline', marginBottom: 12 }}>
           <h1 style={{ flex: '1 1 auto' }}>Your servers</h1>
-          <button className="primary" style={{ flex: '0 0 auto' }} onClick={() => setShowForm((v) => !v)}>
-            {showForm ? 'Cancel' : 'Add server'}
+          <button style={{ flex: '0 0 auto' }} onClick={() => setPanel(panel === 'quick' ? null : 'quick')}>
+            {panel === 'quick' ? 'Cancel' : 'Quick connect'}
+          </button>
+          <button
+            className="primary"
+            style={{ flex: '0 0 auto' }}
+            onClick={() => setPanel(panel === 'save' ? null : 'save')}
+          >
+            {panel === 'save' ? 'Cancel' : 'Add server'}
           </button>
         </div>
 
-        {showForm && (
+        {panel === 'quick' && <QuickConnectForm />}
+
+        {panel === 'save' && (
           <AddServerForm
             onSaved={async () => {
-              setShowForm(false);
+              setPanel(null);
               await refresh();
             }}
           />
         )}
 
-        {servers.length === 0 && !showForm && (
+        {servers.length === 0 && panel === null && (
           <p className="muted">No servers saved yet. Add one to get started.</p>
         )}
 
@@ -107,10 +130,7 @@ export default function ServersPage() {
                 : 'no host key pinned yet — you will be asked to confirm it on first connect'}
             </div>
             <div className="row" style={{ marginTop: 12 }}>
-              <button
-                className="primary"
-                onClick={() => router.push(`/terminal?server=${encodeURIComponent(server.id)}`)}
-              >
+              <button className="primary" onClick={() => open(server)}>
                 Connect
               </button>
               <button className="danger" onClick={() => remove(server)}>
@@ -180,6 +200,158 @@ function AutofillDecoys() {
 function useAutofillProof(): { readOnly: boolean; onFocus: () => void } {
   const [readOnly, setReadOnly] = useState(true);
   return { readOnly, onFocus: () => setReadOnly(false) };
+}
+
+/**
+ * A one-off connection. What is typed here is sent once, used for a single
+ * session, and never written to the database — so there is nothing to leak
+ * afterwards, and nothing to clean up.
+ */
+function QuickConnectForm() {
+  const router = useRouter();
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState(22);
+  const [sshUser, setSshUser] = useState('root');
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('password');
+  const [secret, setSecret] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const userGuard = useAutofillProof();
+  const secretGuard = useAutofillProof();
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const { ticket } = await api.connect({
+        host,
+        port,
+        sshUser,
+        authMethod,
+        secret,
+        cols: 80,
+        rows: 24,
+      });
+      // Clear it from React state on the way out; the ticket is all the
+      // terminal page needs.
+      setSecret('');
+      router.push(`/terminal?ticket=${encodeURIComponent(ticket)}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not connect.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="card" onSubmit={submit} autoComplete="off">
+      <h2>Quick connect</h2>
+      <AutofillDecoys />
+      {error && <div className="notice error">{error}</div>}
+
+      <div className="notice info">
+        Nothing here is saved. The credential is used for this session only and is
+        never written to the database — reconnecting later means typing it again.
+      </div>
+
+      <div className="row">
+        <div style={{ flex: '3 1 200px' }}>
+          <label htmlFor="qc-host">Host</label>
+          <input
+            id="qc-host"
+            name="target-address"
+            required
+            autoComplete="off"
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="example.com or 203.0.113.10"
+            {...NO_AUTOFILL}
+          />
+        </div>
+        <div style={{ flex: '1 1 80px' }}>
+          <label htmlFor="qc-port">Port</label>
+          <input
+            id="qc-port"
+            type="number"
+            min={1}
+            max={65535}
+            required
+            value={port}
+            onChange={(e) => setPort(Number(e.target.value))}
+          />
+        </div>
+      </div>
+
+      <label htmlFor="qc-user">SSH username</label>
+      <input
+        id="qc-user"
+        name="target-account"
+        required
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        value={sshUser}
+        onChange={(e) => setSshUser(e.target.value)}
+        placeholder="root"
+        readOnly={userGuard.readOnly}
+        onFocus={userGuard.onFocus}
+        {...NO_AUTOFILL}
+      />
+
+      <label htmlFor="qc-auth">Authentication</label>
+      <select
+        id="qc-auth"
+        value={authMethod}
+        onChange={(e) => setAuthMethod(e.target.value as AuthMethod)}
+      >
+        <option value="password">Password</option>
+        <option value="privatekey">Private key (unencrypted ed25519)</option>
+      </select>
+
+      {authMethod === 'password' ? (
+        <>
+          <label htmlFor="qc-secret">SSH password</label>
+          <input
+            id="qc-secret"
+            name="target-secret"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            readOnly={secretGuard.readOnly}
+            onFocus={secretGuard.onFocus}
+            {...NO_AUTOFILL}
+          />
+        </>
+      ) : (
+        <>
+          <label htmlFor="qc-secret">Private key</label>
+          <textarea
+            id="qc-secret"
+            name="target-secret"
+            required
+            autoComplete="off"
+            spellCheck={false}
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            {...NO_AUTOFILL}
+          />
+        </>
+      )}
+
+      <div style={{ marginTop: 20 }}>
+        <button className="primary" type="submit" disabled={busy}>
+          {busy ? 'Connecting…' : 'Connect without saving'}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 function AddServerForm({ onSaved }: { onSaved: () => Promise<void> }) {

@@ -2,6 +2,7 @@
 
 import { Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { PageLoading } from '@/components/Loading';
 import TopBar from '@/components/TopBar';
@@ -16,19 +17,27 @@ const TerminalView = dynamic(() => import('@/components/TerminalView'), {
 
 function TerminalPageInner() {
   const params = useSearchParams();
-  const serverId = params.get('server');
+  // The session is provisioned before navigating here, so this page carries a
+  // ticket rather than a target — and never a credential.
+  const ticket = params.get('ticket');
+  const serverId = params.get('server') ?? undefined;
 
-  if (!serverId) {
+  if (!ticket) {
     return (
       <>
         <TopBar />
         <main className="shell">
-          <div className="notice error">No server was specified.</div>
+          <div className="notice error">
+            No session to open. Start one from your servers.
+          </div>
+          <p>
+            <Link href="/servers">Back to servers</Link>
+          </p>
         </main>
       </>
     );
   }
-  return <TerminalView serverId={serverId} />;
+  return <TerminalView ticket={ticket} serverId={serverId} />;
 }
 
 export default function TerminalPage() {

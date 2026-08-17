@@ -12,16 +12,10 @@
  */
 import { handleApi } from './api';
 import { authenticate } from './auth/context';
-import { openSecret } from './auth/dek';
 import type { Env } from './env';
-import { audit } from './db/audit';
-import { getServerWithSecret, touchServer } from './db/servers';
-import { resolveTarget } from './net/guard';
 import { LIMITS, blockStatus, clientKey, rateLimit, strike } from './rate-limit';
 import { secure } from './security/headers';
 import { socketSuspicionWeight, suspicionWeight } from './security/suspicion';
-import type { AuthCredential } from './ssh/connection';
-import type { SessionParams } from './session';
 
 export { SshSession } from './session';
 export { RateLimiter } from './rate-limit';
@@ -99,6 +93,14 @@ function refused(retryAfter: number): Response {
   );
 }
 
+/**
+ * Redeems a ticket issued by POST /api/connect.
+ *
+ * The session was already provisioned there — target vetted, credential
+ * resolved — so nothing sensitive rides in this URL. The ticket names a Durable
+ * Object; the object itself verifies the claim belongs to the signed-in account
+ * and refuses a second one.
+ */
 async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
   if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
     return new Response('Expected a WebSocket upgrade.', { status: 426 });
@@ -106,66 +108,23 @@ async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Re
 
   const context = await authenticate(request, env);
   if (!context) return new Response('Not signed in.', { status: 401 });
-  if (!context.dek) return new Response('Sign in again to open a session.', { status: 409 });
 
-  const gate = await rateLimit(env, `session:${context.userId}`, LIMITS.sessionOpen);
-  if (!gate.allowed) {
-    return new Response('Too many sessions opened. Try again shortly.', {
-      status: 429,
-      headers: { 'retry-after': String(gate.retryAfter) },
-    });
-  }
+  const ticket = url.searchParams.get('ticket');
+  if (!ticket) return new Response('No session ticket.', { status: 400 });
 
-  const serverId = url.searchParams.get('server');
-  if (!serverId) return new Response('No server specified.', { status: 400 });
-
-  // Ownership is enforced in the query itself: a server belonging to someone
-  // else is indistinguishable from one that does not exist.
-  const server = await getServerWithSecret(env, context.userId, serverId);
-  if (!server) return new Response('No such server.', { status: 404 });
-
-  let credential: AuthCredential;
+  let id: DurableObjectId;
   try {
-    const secret = await openSecret(context.dek, server.secret);
-    credential =
-      server.authMethod === 'password'
-        ? { method: 'password', password: secret }
-        : { method: 'privatekey', privateKey: secret };
+    id = env.SSH_SESSION.idFromString(ticket);
   } catch {
-    // A failed GCM tag means the DEK does not belong to this row.
-    return new Response('Could not decrypt the saved credential.', { status: 409 });
+    return new Response('Invalid session ticket.', { status: 400 });
   }
 
-  const guard = await resolveTarget(env, server.host, server.port);
-  if (!guard.ok) {
-    await audit(env, context.userId, 'session_refused', guard.reason);
-    return new Response(guard.reason, { status: 403 });
+  const stub = env.SSH_SESSION.get(id);
+  // Single use, bound to the account that created it, and expired after a
+  // minute — so a ticket appearing in a proxy log is worth nothing.
+  if (!(await stub.claim(context.userId))) {
+    return new Response('That session ticket is not valid.', { status: 403 });
   }
-
-  const params: SessionParams = {
-    address: guard.target.address,
-    hostname: guard.target.hostname,
-    port: guard.target.port,
-    username: server.sshUser,
-    credential,
-    pinnedFingerprint: server.hostKeyFingerprint,
-    cols: clamp(url.searchParams.get('cols'), 80, 1, 500),
-    rows: clamp(url.searchParams.get('rows'), 24, 1, 300),
-  };
-
-  // A fresh object per terminal: sessions are never shared or resumed, and an
-  // abandoned one has no name anyone could reconnect to.
-  const stub = env.SSH_SESSION.get(env.SSH_SESSION.newUniqueId());
-  await stub.configure(params);
-
-  await touchServer(env, context.userId, server.id);
-  await audit(env, context.userId, 'session_opened', server.label);
 
   return stub.fetch(request);
-}
-
-function clamp(raw: string | null, fallback: number, min: number, max: number): number {
-  const n = raw === null ? NaN : Number(raw);
-  if (!Number.isInteger(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
 }

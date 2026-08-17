@@ -8,6 +8,7 @@
 import type { Env } from '../env';
 import { authenticate, isSameOrigin } from '../auth/context';
 import * as auth from './auth';
+import { connect } from './connect';
 import { countUsers } from '../db/users';
 import { fail, json } from './http';
 import * as invites from './invites';
@@ -57,6 +58,11 @@ export async function handleApi(request: Request, env: Env, url: URL): Promise<R
     case 'servers':
       if (method === 'GET') return servers.list(env, context);
       if (method === 'POST') return servers.create(request, env, context);
+      break;
+    case 'connect':
+      // Provisions a terminal and returns a ticket. Credentials for an unsaved
+      // connection arrive here and are never persisted.
+      if (method === 'POST') return connect(request, env, context);
       break;
     default:
       break;

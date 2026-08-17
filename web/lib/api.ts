@@ -131,6 +131,26 @@ export const api = {
     return call<{ ok: true }>(`servers/${id}`, { method: 'DELETE' });
   },
 
+  /**
+   * Provisions a terminal and returns a single-use ticket. Credentials for an
+   * unsaved connection go in this request and are never stored anywhere.
+   */
+  connect(input: {
+    serverId?: string;
+    host?: string;
+    port?: number;
+    sshUser?: string;
+    authMethod?: AuthMethod;
+    secret?: string;
+    cols: number;
+    rows: number;
+  }) {
+    return call<{ ticket: string; target: string; pinned: boolean }>('connect', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
   createInvite() {
     return call<{ invite: { code: string; expiresAt: number | null } }>('invites', {
       method: 'POST',

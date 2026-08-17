@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import TopBar from '@/components/TopBar';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -23,7 +24,21 @@ const THEME = {
   selectionBackground: '#264f3a',
 };
 
-export default function TerminalView({ serverId }: { serverId: string }) {
+/**
+ * `ticket` is a single-use handle to a session the server has already
+ * provisioned, so no credential is ever present on this page.
+ *
+ * `serverId` is only supplied for saved servers. It is what makes reconnecting
+ * possible — a new ticket can be minted from the stored credential. An unsaved
+ * session has nothing to mint from, which is the trade for never storing it.
+ */
+export default function TerminalView({
+  ticket,
+  serverId,
+}: {
+  ticket: string;
+  serverId?: string;
+}) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -33,7 +48,10 @@ export default function TerminalView({ serverId }: { serverId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pendingFingerprint, setPendingFingerprint] = useState<string | null>(null);
   const [mismatch, setMismatch] = useState<string | null>(null);
-  const [generation, setGeneration] = useState(0);
+  // Changing the ticket is what drives a reconnect: the effect below owns one
+  // socket per ticket, so a new one tears the old session down and rebuilds.
+  const [activeTicket, setActiveTicket] = useState(ticket);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const send = useCallback((message: unknown) => {
     const socket = socketRef.current;
@@ -72,9 +90,11 @@ export default function TerminalView({ serverId }: { serverId: string }) {
     setMismatch(null);
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${protocol}//${window.location.host}/ws?server=${encodeURIComponent(
-      serverId,
-    )}&cols=${term.cols}&rows=${term.rows}`;
+    // Only the ticket travels in the URL. It is single-use, expires in a
+    // minute, and is bound to this account, so it is safe in a log.
+    const url = `${protocol}//${window.location.host}/ws?ticket=${encodeURIComponent(
+      activeTicket,
+    )}`;
     const socket = new WebSocket(url);
     socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
@@ -107,8 +127,10 @@ export default function TerminalView({ serverId }: { serverId: string }) {
           setPendingFingerprint(message.fingerprint ?? null);
           break;
         case 'hostkey-accepted':
-          // Pin it, so any later change in the server's key is refused.
-          if (message.fingerprint) {
+          // Pin it, so any later change in the server's key is refused. Only
+          // meaningful for a saved server — there is nothing to pin against on
+          // an unsaved connection, so it is confirmed fresh every time.
+          if (message.fingerprint && serverId) {
             void api
               .updateServer(serverId, { hostKeyFingerprint: message.fingerprint })
               .catch(() => {});
@@ -156,7 +178,7 @@ export default function TerminalView({ serverId }: { serverId: string }) {
       fitRef.current = null;
       void decoder;
     };
-  }, [serverId, generation]);
+  }, [activeTicket]);
 
   /**
    * Clears the saved pin and reconnects. Deliberately does NOT save the new key
@@ -164,13 +186,36 @@ export default function TerminalView({ serverId }: { serverId: string }) {
    * the new fingerprint still has to be looked at and accepted.
    */
   async function forgetHostKey() {
+    if (!serverId) return;
     try {
       await api.updateServer(serverId, { hostKeyFingerprint: null });
       setMismatch(null);
       setError(null);
-      setGeneration((n) => n + 1);
+      await reconnect();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not clear the saved host key.');
+    }
+  }
+
+  /**
+   * Mints a fresh ticket and lets the effect rebuild the session. Only possible
+   * for a saved server: an unsaved one has no stored credential to mint from.
+   */
+  async function reconnect() {
+    if (!serverId) return;
+    setReconnecting(true);
+    setError(null);
+    try {
+      const { ticket: next } = await api.connect({
+        serverId,
+        cols: termRef.current?.cols ?? 80,
+        rows: termRef.current?.rows ?? 24,
+      });
+      setActiveTicket(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reconnect.');
+    } finally {
+      setReconnecting(false);
     }
   }
 
@@ -225,12 +270,26 @@ export default function TerminalView({ serverId }: { serverId: string }) {
 
       {status === 'closed' && (
         <div className="banner">
-          <span>The session has ended.</span>
-          {/* Manual reconnect only — an automatic retry loop against an SSH
-              server is a good way to get an IP banned. */}
-          <button className="primary" onClick={() => setGeneration((n) => n + 1)}>
-            Reconnect
-          </button>
+          {serverId ? (
+            <>
+              <span>The session has ended.</span>
+              {/* Manual reconnect only — an automatic retry loop against an SSH
+                  server is a good way to get an IP banned. */}
+              <button className="primary" onClick={reconnect} disabled={reconnecting}>
+                {reconnecting ? 'Reconnecting…' : 'Reconnect'}
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                The session has ended. This was an unsaved connection, so the credentials
+                were never stored — reconnecting means entering them again.
+              </span>
+              <Link href="/servers">
+                <button className="primary">Back to servers</button>
+              </Link>
+            </>
+          )}
         </div>
       )}
 

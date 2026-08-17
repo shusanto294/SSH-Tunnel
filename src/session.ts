@@ -22,6 +22,8 @@ import type { AuthCredential } from './ssh/connection';
 import { AuthError, HostKeyError, SshClient } from './ssh/connection';
 
 export interface SessionParams {
+  /** The account this session was provisioned for. Checked again at claim time. */
+  ownerId: string;
   address: string;
   hostname: string;
   port: number;
@@ -48,6 +50,8 @@ type ClientMessage =
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_SESSION_MS = 60 * 60 * 1000;
 const ALARM_INTERVAL_MS = 30 * 1000;
+/** How long a provisioned-but-unused session may sit holding a credential. */
+const UNCLAIMED_TTL_MS = 60 * 1000;
 
 export class SshSession extends DurableObject<Env> {
   private params: SessionParams | null = null;
@@ -56,16 +60,40 @@ export class SshSession extends DurableObject<Env> {
   private startedAt = 0;
   private lastActivity = 0;
   private torndown = false;
+  private claimed = false;
+  private expiresUnclaimedAt = 0;
   private hostKeyDecision: ((accept: boolean) => void) | null = null;
 
   /**
    * Called by the Worker over RPC before the upgrade. Connection parameters,
-   * including the decrypted credential, arrive as arguments rather than as
-   * request headers so they never sit in anything that could be logged.
+   * including the credential, arrive as arguments rather than as request
+   * headers or query parameters, so they never sit in anything that could be
+   * logged. For an unsaved session this is the only place the credential ever
+   * exists — it is held in memory here and written nowhere.
    */
   async configure(params: SessionParams): Promise<void> {
     if (this.params) throw new Error('This session is already configured.');
     this.params = params;
+    // A provisioned session that nobody connects to still holds a credential
+    // in memory. Give it a short life of its own.
+    this.expiresUnclaimedAt = Date.now() + UNCLAIMED_TTL_MS;
+    await this.ctx.storage.setAlarm(this.expiresUnclaimedAt + 1000);
+  }
+
+  /**
+   * Single-use handover. The ticket is an unguessable object id, but ownership
+   * is still checked rather than inferred from that — and claiming twice is
+   * refused, so a ticket that leaks cannot be replayed.
+   */
+  async claim(userId: string): Promise<boolean> {
+    if (!this.params || this.claimed || this.torndown) return false;
+    if (this.params.ownerId !== userId) return false;
+    if (Date.now() > this.expiresUnclaimedAt) {
+      await this.teardown('Session ticket expired.');
+      return false;
+    }
+    this.claimed = true;
+    return true;
   }
 
   override async fetch(request: Request): Promise<Response> {
@@ -191,6 +219,13 @@ export class SshSession extends DurableObject<Env> {
   override async alarm(): Promise<void> {
     if (this.torndown) return;
     const now = Date.now();
+
+    // Provisioned but never connected: drop the credential rather than hold it.
+    if (!this.socket) {
+      if (now > this.expiresUnclaimedAt) await this.teardown('Session was never opened.');
+      else await this.ctx.storage.setAlarm(this.expiresUnclaimedAt + 1000);
+      return;
+    }
     if (now - this.lastActivity > IDLE_TIMEOUT_MS) {
       this.send({ type: 'error', message: 'Session closed after being idle.' });
       await this.teardown('Idle timeout.');
