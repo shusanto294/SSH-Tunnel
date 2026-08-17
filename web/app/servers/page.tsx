@@ -152,10 +152,10 @@ export default function ServersPage() {
  * wrong secret against the server.
  *
  * `autoComplete="off"` alone is not enough: Chrome ignores it on inputs it
- * believes are logins, so the password field claims to be a *new* password
- * (which suppresses filling a stored one) and the field names avoid the
- * username/email heuristics. The data-* attributes opt out of 1Password,
- * LastPass, and Dashlane respectively.
+ * believes are logins, so the field names also avoid the username/email
+ * heuristics, and the credential field is not a password input at all — see
+ * SecretField. The data-* attributes opt out of 1Password, LastPass, and
+ * Dashlane respectively.
  */
 const NO_AUTOFILL = {
   'data-1p-ignore': true,
@@ -164,28 +164,63 @@ const NO_AUTOFILL = {
 } as const;
 
 /**
- * Decoys. Chrome fills the first username/password pair it finds in a form and
- * ignores `autocomplete="off"` while doing it, so this pair is offered up to
- * absorb the fill. They are off-screen rather than `display: none`, because
- * Chrome skips fields it considers unrenderable — which would send the fill
- * straight back to the real inputs.
+ * A credential field that is not a password input.
+ *
+ * These forms hold credentials for a remote server, not for this site, so the
+ * browser's "save this password?" prompt is wrong every time it appears — and
+ * no autocomplete attribute suppresses it, because the prompt keys off the
+ * field's type rather than its attributes. Using a text input masked with CSS
+ * removes the prompt, and removes the login-form classification that made
+ * Chrome autofill the account's own credentials here.
+ *
+ * The reveal toggle is a small bonus of not being a password input: the value
+ * can simply be shown, which matters when typing a long generated password.
  */
-const OFFSCREEN: React.CSSProperties = {
-  position: 'absolute',
-  top: -9999,
-  left: -9999,
-  width: 1,
-  height: 1,
-  opacity: 0,
-  pointerEvents: 'none',
-};
+function SecretField({
+  id,
+  value,
+  onChange,
+  label,
+  guard,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  label: string;
+  guard: { readOnly: boolean; onFocus: () => void };
+}) {
+  const [revealed, setRevealed] = useState(false);
 
-function AutofillDecoys() {
   return (
-    <div aria-hidden="true" style={OFFSCREEN}>
-      <input type="text" name="username" autoComplete="username" tabIndex={-1} />
-      <input type="password" name="password" autoComplete="current-password" tabIndex={-1} />
-    </div>
+    <>
+      <label htmlFor={id}>{label}</label>
+      <div className="secret-field">
+        <input
+          id={id}
+          name="remote-secret"
+          type="text"
+          className={revealed ? undefined : 'masked'}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          readOnly={guard.readOnly}
+          onFocus={guard.onFocus}
+          {...NO_AUTOFILL}
+        />
+        <button
+          type="button"
+          className="reveal"
+          onClick={() => setRevealed((v) => !v)}
+          aria-label={revealed ? 'Hide the credential' : 'Show the credential'}
+        >
+          {revealed ? 'Hide' : 'Show'}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -246,7 +281,6 @@ function QuickConnectForm() {
   return (
     <form className="card" onSubmit={submit} autoComplete="off">
       <h2>Quick connect</h2>
-      <AutofillDecoys />
       {error && <div className="notice error">{error}</div>}
 
       <div className="notice info">
@@ -313,21 +347,13 @@ function QuickConnectForm() {
       </select>
 
       {authMethod === 'password' ? (
-        <>
-          <label htmlFor="qc-secret">SSH password</label>
-          <input
-            id="qc-secret"
-            name="target-secret"
-            type="password"
-            autoComplete="new-password"
-            required
-            value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            readOnly={secretGuard.readOnly}
-            onFocus={secretGuard.onFocus}
-            {...NO_AUTOFILL}
-          />
-        </>
+        <SecretField
+          id="qc-secret"
+          label="SSH password"
+          value={secret}
+          onChange={setSecret}
+          guard={secretGuard}
+        />
       ) : (
         <>
           <label htmlFor="qc-secret">Private key</label>
@@ -389,7 +415,6 @@ function AddServerForm({ onSaved }: { onSaved: () => Promise<void> }) {
   return (
     <form className="card" onSubmit={submit} autoComplete="off">
       <h2>Add a server</h2>
-      <AutofillDecoys />
       {error && <div className="notice error">{error}</div>}
 
       <label htmlFor="label">Label</label>
@@ -464,21 +489,12 @@ function AddServerForm({ onSaved }: { onSaved: () => Promise<void> }) {
 
       {authMethod === 'password' ? (
         <>
-          <label htmlFor="secret">SSH password</label>
-          <input
+          <SecretField
             id="secret"
-            name="shell-secret"
-            type="password"
-            // "new-password" rather than "off": Chrome ignores "off" on
-            // password inputs, but will not fill a stored password into a
-            // field claiming to be a new one.
-            autoComplete="new-password"
-            required
+            label="SSH password"
             value={secret}
-            onChange={(e) => setSecret(e.target.value)}
-            readOnly={secretGuard.readOnly}
-            onFocus={secretGuard.onFocus}
-            {...NO_AUTOFILL}
+            onChange={setSecret}
+            guard={secretGuard}
           />
           <div className="notice info">
             This is the password for <strong>{sshUser || 'the account'}</strong> on the

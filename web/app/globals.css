@@ -213,6 +213,41 @@ textarea {
   resize: vertical;
 }
 
+/*
+ * A text input masked with CSS rather than type="password".
+ *
+ * Browsers offer to save a password whenever a submitted form contains a
+ * password field, and no autocomplete attribute suppresses that. These fields
+ * hold credentials for someone else's server, not for this site, so the offer
+ * is wrong every time. Removing the field type removes the prompt; the masking
+ * is purely visual, which is all it ever was for a password input too.
+ */
+.masked {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
+.secret-field {
+  position: relative;
+}
+.secret-field input {
+  padding-right: 68px;
+}
+.secret-field .reveal {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-height: 0;
+  padding: 5px 10px;
+  font-size: 12px;
+  background: var(--panel-alt);
+  color: var(--muted);
+}
+.secret-field .reveal:hover {
+  color: var(--text);
+}
+
 button {
   font-family: inherit;
   font-size: 14px;
