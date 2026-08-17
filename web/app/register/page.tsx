@@ -54,7 +54,9 @@ export default function RegisterPage() {
   return (
     <main className="shell">
       <h1>
-        SSH <span style={{ color: 'var(--accent)' }}>Tunnel</span>
+        <Link href="/" className="brand">
+          SSH <span>Tunnel</span>
+        </Link>
       </h1>
       <p className="muted">Create an account to save and reach your own servers.</p>
 

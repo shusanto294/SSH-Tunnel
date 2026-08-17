@@ -28,7 +28,9 @@ export default function LoginPage() {
   return (
     <main className="shell">
       <h1>
-        SSH <span style={{ color: 'var(--accent)' }}>Tunnel</span>
+        <Link href="/" className="brand">
+          SSH <span>Tunnel</span>
+        </Link>
       </h1>
       <p className="muted">Sign in to reach your servers.</p>
 

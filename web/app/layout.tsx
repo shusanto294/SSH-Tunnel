@@ -3,8 +3,17 @@ import '@xterm/xterm/css/xterm.css';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'SSH Tunnel',
-  description: 'A browser-based SSH client that reaches your servers over HTTPS.',
+  title: 'SSH Tunnel — SSH from your browser, over HTTPS',
+  description:
+    'A real SSH terminal in your browser, tunnelled over HTTPS on port 443. Reach your ' +
+    'servers from networks that block port 22 — no agent, no VPN, nothing to install.',
+  openGraph: {
+    title: 'SSH Tunnel — SSH from your browser, over HTTPS',
+    description:
+      'Reach your servers from any network that blocks port 22. A browser SSH client ' +
+      'running on Cloudflare Workers.',
+    type: 'website',
+  },
 };
 
 export const viewport: Viewport = {

@@ -228,6 +228,16 @@ Deliberate: PBKDF2 at 600,000 iterations takes roughly a second. Lower
 `TARGET_ITERATIONS` in `src/auth/password.ts` if you want it faster, and accept
 the weaker resistance to offline cracking.
 
+## Contributing
+
+Issues and pull requests are welcome. Run `npm run typecheck` and `npm run test`
+before opening one.
+
+Report security problems privately through GitHub's **Report a vulnerability**
+button rather than a public issue. See [SECURITY.md](SECURITY.md).
+
+Licensed under the [MIT License](LICENSE).
+
 ## Security
 
 This section is the important one. A deployment of this app holds other

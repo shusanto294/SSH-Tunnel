@@ -299,6 +299,196 @@ button.link {
   margin-top: 6px;
 }
 
+/* ---------------------------------------------------------------- landing */
+
+.landing {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 20px 40px;
+}
+
+.landing section {
+  padding: 64px 0;
+  border-bottom: 1px solid var(--line);
+}
+.landing section:last-of-type {
+  border-bottom: none;
+}
+
+.landing h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.hero {
+  padding-top: 72px !important;
+}
+.eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin: 0 0 16px;
+}
+.hero h1 {
+  font-size: clamp(28px, 5vw, 44px);
+  line-height: 1.2;
+  margin: 0 0 20px;
+  letter-spacing: -0.01em;
+}
+.lede {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--muted);
+  max-width: 62ch;
+  margin: 0 0 28px;
+}
+.cta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+button.big {
+  font-size: 15px;
+  padding: 13px 24px;
+}
+.fineprint {
+  margin-top: 24px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Three-across on a desktop, stacking on its own without breakpoints. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.tile {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+.tile h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+.tile p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.diagram {
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  /* The ASCII art has a fixed width; let it scroll rather than wrap into
+     nonsense on a narrow screen. */
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 32px;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 14px;
+}
+.steps li {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.steps strong {
+  color: var(--text);
+}
+
+.honest {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  background: var(--panel);
+}
+.honest h3 {
+  font-size: 14px;
+  margin: 0 0 10px;
+  color: var(--warn);
+}
+.honest p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.spec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 28px;
+}
+.spec-grid dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 20px;
+  font-size: 13px;
+}
+.spec-grid dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.spec-grid dd {
+  margin: 0;
+  color: var(--accent);
+}
+.spec-grid .notes p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.closing {
+  text-align: center;
+}
+.closing .cta {
+  justify-content: center;
+}
+.closing h2 {
+  font-size: clamp(20px, 3vw, 26px);
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.closing .lede {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 28px 0;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
 /* Terminal page: full viewport, no page scroll — xterm does its own. */
 .terminal-page {
   display: flex;
