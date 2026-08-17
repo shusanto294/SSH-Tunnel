@@ -44,28 +44,9 @@ export default function ServersPage() {
     };
   }, [router, refresh]);
 
-  /**
-   * Un-pins the host key, for when a machine has genuinely been rebuilt. The
-   * new key is not trusted here — the next connection asks for confirmation of
-   * the fingerprint the way a first connection does.
-   */
-  async function forgetHostKey(server: Server) {
-    const ok = confirm(
-      `Forget the saved host key for "${server.label}"?\n\n` +
-        'Do this only if you reinstalled or rebuilt this server. The next connection ' +
-        'will show you its new fingerprint to confirm.\n\n' +
-        'If you did NOT rebuild it, a changed host key can mean something is ' +
-        'impersonating the server.',
-    );
-    if (!ok) return;
-    try {
-      await api.updateServer(server.id, { hostKeyFingerprint: null });
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not clear the saved host key.');
-    }
-  }
-
+  // Clearing a pinned host key is deliberately not offered here. It is only
+  // ever the right action in response to an actual mismatch, and the terminal
+  // offers it there — where the new fingerprint is on screen to judge.
   async function remove(server: Server) {
     if (!confirm(`Delete "${server.label}"? The saved credential is destroyed with it.`)) return;
     try {
@@ -132,11 +113,6 @@ export default function ServersPage() {
               >
                 Connect
               </button>
-              {server.hostKeyFingerprint && (
-                <button onClick={() => forgetHostKey(server)} title="Use after rebuilding this server">
-                  Forget host key
-                </button>
-              )}
               <button className="danger" onClick={() => remove(server)}>
                 Delete
               </button>
